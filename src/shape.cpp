@@ -315,3 +315,4 @@ void calcColor(unsigned char* toFill,Autonoma* c, Ray ray, unsigned int depth){
 //       }
 //    }
 // }
+
