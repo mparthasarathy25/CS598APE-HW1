@@ -55,16 +55,25 @@ void insertionSort(TimeAndShape *arr, int n) {
 // This reduced runtime to 1.77 seconds and reduced CPU occupation to about 4.04%
 void calcColor(unsigned char* toFill,Autonoma* c, Ray ray, unsigned int depth){
    ShapeNode* t = c->listStart;
-   TimeAndShape* times = (TimeAndShape*)malloc(sizeof(TimeAndShape) * c->listSize + 1);
    size_t seen = 0;
+   TimeAndShape min;
+   //removed malloc for times and performed single pass to retrieve minimum TimeAndShape from c list
+   //time went from 1.68 to 1.58
    while (t != NULL) {
       double time = t->data->getIntersection(ray);
-      times[seen] = (TimeAndShape){ time, t->data };
+      if (seen == 0) {
+         min = (TimeAndShape){ time, t->data };
+      } else {
+         TimeAndShape tmp = (TimeAndShape){ time, t->data };
+         if (tmp.time < min.time) {
+            min = tmp;
+         }
+      }
       seen++;
       t = t->next;
    }
-   insertionSort(times, seen);
-   if (seen == 0 || times[0].time == inf) {
+
+   if (seen == 0 || min.time == inf) {
       double opacity, reflection, ambient;
       Vector temp = ray.vector.normalize();
       const double x = temp.x;
@@ -72,13 +81,11 @@ void calcColor(unsigned char* toFill,Autonoma* c, Ray ray, unsigned int depth){
       const double me = (temp.y<0)?-temp.y:temp.y;
       const double angle = atan2(z, x);
       c->skybox->getColor(toFill, &ambient, &opacity, &reflection, fix(angle/M_TWO_PI),fix(me));
-      free(times);
       return;
    }
 
-   double curTime = times[0].time;
-   Shape* curShape = times[0].shape;
-   free(times);
+   double curTime = min.time;
+   Shape* curShape = min.shape;
 
    Vector intersect = curTime*ray.vector+ray.point;
    double opacity, reflection, ambient;
