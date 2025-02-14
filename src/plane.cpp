@@ -7,7 +7,7 @@ Plane::Plane(const Vector &c, Texture* t, double ya, double pi, double ro, doubl
    mapX = textureX; mapY = textureY;
 }
 
-void Plane::setAngles(double a, double b, double c){
+inline void Plane::setAngles(double a, double b, double c){
    yaw =a; pitch = b; roll = c;
    xcos = cos(yaw);
    xsin = sin(yaw);
@@ -27,7 +27,7 @@ void Plane::setAngles(double a, double b, double c){
    d = -vect.dot(center);
 }
 
-void Plane::setYaw(double a){
+inline void Plane::setYaw(double a){
    yaw =a;
    xcos = cos(yaw);
    xsin = sin(yaw);
@@ -44,7 +44,7 @@ void Plane::setYaw(double a){
    d = -vect.dot(center);
 }
 
-void Plane::setPitch(double b){
+inline void Plane::setPitch(double b){
    pitch = b;
    ycos = cos(pitch);
    ysin = sin(pitch);
@@ -57,7 +57,7 @@ void Plane::setPitch(double b){
    d = -vect.dot(center);
 }
 
-void Plane::setRoll(double c){
+inline void Plane::setRoll(double c){
    roll = c;
    zcos = cos(roll);
    zsin = sin(roll);

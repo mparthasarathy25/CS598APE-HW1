@@ -13,28 +13,28 @@
 
 Vector::Vector(double a, double b, double c) : x(a), y(b), z(c) {
 }
-void Vector::operator -= (const Vector rhs) {
+inline void Vector::operator -= (const Vector rhs) {
    x-=rhs.x; y-=rhs.y; z-=rhs.z;
 }
-void Vector::operator += (const Vector rhs) {
+inline void Vector::operator += (const Vector rhs) {
    x+=rhs.x; y+=rhs.y; z+=rhs.z;
 }
-void Vector::operator *= (const double rhs) {
+inline void Vector::operator *= (const double rhs) {
    x*=rhs; y*=rhs; z*=rhs;
 }
-void Vector::operator *= (const float rhs) {
+inline void Vector::operator *= (const float rhs) {
    x*=rhs; y*=rhs; z*=rhs;
 }
-void Vector::operator *= (const int rhs) {
+inline void Vector::operator *= (const int rhs) {
    x*=rhs; y*=rhs; z*=rhs;
 }
-void Vector::operator /= (const double rhs) {
+inline void Vector::operator /= (const double rhs) {
    x/=rhs; y/=rhs; z/=rhs;
 }
-void Vector::operator /= (const float rhs) {
+inline void Vector::operator /= (const float rhs) {
    x/=rhs; y/=rhs; z/=rhs;
 }
-void Vector::operator /= (const int rhs) {
+inline void Vector::operator /= (const int rhs) {
    x/=rhs; y/=rhs; z/=rhs;
 }
 

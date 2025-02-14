@@ -47,7 +47,7 @@ void Sphere::move(){
 }
 unsigned char Sphere::reversible(){return 0;}
 
-void Sphere::getColor(unsigned char* toFill, double* amb, double* op, double* ref, Autonoma* r, Ray ray, unsigned int depth){
+inline void Sphere::getColor(unsigned char* toFill, double* amb, double* op, double* ref, Autonoma* r, Ray ray, unsigned int depth){
    double data3 = (center.y-ray.point.y+radius)/(2*radius);
    double data2 = atan2( ray.point.z-center.z, ray.point.x-center.x);
    texture->getColor(toFill, amb, op, ref,fix((yaw+data2)/M_TWO_PI/textureX),fix((pitch/M_TWO_PI-(data3))/textureY));
@@ -84,7 +84,7 @@ if(normalMap==NULL)
       return ((norm[0]-128)*right+(norm[1]-128)*up+norm[2]*vect).normalize();
 }
 
-void Sphere::setAngles(double a, double b, double c){
+inline void Sphere::setAngles(double a, double b, double c){
    yaw =a; pitch = b; roll = c;
    xcos = cos(yaw);
    xsin = sin(yaw);
@@ -94,19 +94,19 @@ void Sphere::setAngles(double a, double b, double c){
    zsin = sin(roll);
 }
 
-void Sphere::setYaw(double a){
+inline void Sphere::setYaw(double a){
    yaw =a;
    xcos = cos(yaw);
    xsin = sin(yaw);
 }
 
-void Sphere::setPitch(double b){
+inline void Sphere::setPitch(double b){
    pitch = b;
    ycos = cos(pitch);
    ysin = sin(pitch);
 }
 
-void Sphere::setRoll(double c){
+inline void Sphere::setRoll(double c){
    roll = c;
    zcos = cos(roll);
    zsin = sin(roll);

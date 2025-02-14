@@ -8,7 +8,7 @@ Camera::Camera(const Vector &f, double a, double b, double c) : focus(f), right(
    setAngles(a, b, c);
 }
 
-void Camera::setAngles(double a, double b, double c){
+inline void Camera::setAngles(double a, double b, double c){
    yaw =a; pitch = b; roll = c;
    xcos = cos(yaw);
    xsin = sin(yaw);
