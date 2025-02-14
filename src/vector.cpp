@@ -8,6 +8,7 @@
 #include "vector.h"
 #include <immintrin.h>
 #include <cmath>
+#include <omp.h>
 
 
 Vector::Vector(double a, double b, double c) : x(a), y(b), z(c) {
@@ -105,5 +106,6 @@ Vector solveScalers(Vector v1, Vector v2, Vector v3, Vector C) {
    double invDenom = 1.0 / denom;
    return Vector(a * invDenom, b * invDenom, c * invDenom);
 }
+
 
 Ray::Ray(const Vector& po, const Vector& ve): point(po), vector(ve){}
