@@ -11,18 +11,17 @@ void ImageTexture::getColor(unsigned char* toFill, double* am, double *op, doubl
    *am = ambient;
 }
 
-void ImageTexture::maskImageAlpha(){
-int x,y;
-   for(y = h-1; y>=0; y--)
-      for(x = 0; x<w; x++){
-         int total = 4*(x+y*w);
-         {
-            imageData[total+3]=imageData[total];
-            imageData[total]=255;
-            imageData[total+1]=255;
-            imageData[total+2]=255;
-         }
-      }          
+void ImageTexture::maskImageAlpha() {
+   #pragma omp parallel for schedule(dynamic, 16)
+   for(int y = h-1; y >= 0; y--) {
+       for(int x = 0; x < w; x++) {
+           int total = 4*(x + y*w);
+           imageData[total+3] = imageData[total];
+           imageData[total] = 255;
+           imageData[total+1] = 255;
+           imageData[total+2] = 255;
+       }
+   }
 }
 
 
