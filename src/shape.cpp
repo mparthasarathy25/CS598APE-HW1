@@ -50,24 +50,6 @@ void insertionSort(TimeAndShape *arr, int n) {
     }
 }
 
-TimeAndShape findIntersection(const Ray& ray, BVHNode* node, &seen) {
-   seen += 1;
-   if (!node->bounds.intersects(ray)) {
-       return {INFINITY, nullptr};
-   }
-   
-   if (node->shape) {  // Leaf node
-       double time = node->shape->data->getIntersection(ray);
-       return {time, node->shape->data};
-   }
-   
-   // Internal node - recurse down both children and take nearest hit
-   TimeAndShape leftHit = findIntersection(ray, node->left);
-   TimeAndShape rightHit = findIntersection(ray, node->right);
-   
-   return (leftHit.time < rightHit.time) ? leftHit : rightHit;
-}
-
 
 // This is the third/final iteration of changes we made where we manually added a variable called listSize to the Autonoma constructor so that it does not need to be counted everytime, but can be retrieved from the constructor directly
 // This reduced runtime to 1.77 seconds and reduced CPU occupation to about 4.04%
@@ -75,23 +57,21 @@ void calcColor(unsigned char* toFill,Autonoma* c, Ray ray, unsigned int depth){
    ShapeNode* t = c->listStart;
    size_t seen = 0;
    TimeAndShape min;
-   // //removed malloc for times and performed single pass to retrieve minimum TimeAndShape from c list
-   // //time went from 1.68 to 1.58
-   // while (t != NULL) {
-   //    double time = t->data->getIntersection(ray);
-   //    if (seen == 0) {
-   //       min = (TimeAndShape){ time, t->data };
-   //    } else {
-   //       TimeAndShape tmp = (TimeAndShape){ time, t->data };
-   //       if (tmp.time < min.time) {
-   //          min = tmp;
-   //       }
-   //    }
-   //    seen++;
-   //    t = t->next;
-   // }
-
-   min = findIntersection(ray, c->root, &seen);
+   //removed malloc for times and performed single pass to retrieve minimum TimeAndShape from c list
+   //time went from 1.68 to 1.58
+   while (t != NULL) {
+      double time = t->data->getIntersection(ray);
+      if (seen == 0) {
+         min = (TimeAndShape){ time, t->data };
+      } else {
+         TimeAndShape tmp = (TimeAndShape){ time, t->data };
+         if (tmp.time < min.time) {
+            min = tmp;
+         }
+      }
+      seen++;
+      t = t->next;
+   }
 
    if (seen == 0 || min.time == inf) {
       double opacity, reflection, ambient;

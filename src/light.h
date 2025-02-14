@@ -24,13 +24,6 @@ struct ShapeNode{
    ShapeNode* prev, *next;
 };
 
-struct BVHNode {
-   BoundingBox bounds;
-   BVHNode* left;
-   BVHNode* right;
-   ShapeNode* shape;
-};
-
 class Autonoma{
 public:
    Camera camera;
@@ -38,7 +31,6 @@ public:
    unsigned int depth;
    ShapeNode *listStart, *listEnd;
    LightNode *lightStart, *lightEnd;
-   BVHNode *root;
    Autonoma(const Camera &c);
    Autonoma(const Camera &c, Texture* tex);
    void addShape(Shape* s);
