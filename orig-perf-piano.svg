@@ -1,0 +1,1554 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="886" onload="init(evt)" viewBox="0 0 1200 886" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="886.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="869" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="869" > </text>
+<g id="frames">
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="475.2" y="277" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="478.24" y="287.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="421" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="431.5" ></text>
+</g>
+<g >
+<title>[unknown] (30,303,030 samples, 0.33%)</title><rect x="473.9" y="485" width="3.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="476.94" y="495.5" ></text>
+</g>
+<g >
+<title>swapper (2,252,525,230 samples, 24.56%)</title><rect x="900.2" y="821" width="289.8" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="903.20" y="831.5" >swapper</text>
+</g>
+<g >
+<title>[unknown] (40,404,040 samples, 0.44%)</title><rect x="1184.8" y="501" width="5.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1187.80" y="511.5" ></text>
+</g>
+<g >
+<title>[unknown] (939,393,930 samples, 10.24%)</title><rect x="779.3" y="805" width="120.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="782.34" y="815.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (40,404,040 samples, 0.44%)</title><rect x="1184.8" y="597" width="5.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1187.80" y="607.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (10,101,010 samples, 0.11%)</title><rect x="572.7" y="725" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="575.71" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="437" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="447.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,010,100,990 samples, 21.92%)</title><rect x="219.2" y="677" width="258.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="222.23" y="687.5" >[unknown]</text>
+</g>
+<g >
+<title>solveScalers (10,101,010 samples, 0.11%)</title><rect x="574.0" y="741" width="1.3" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="577.01" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (40,404,040 samples, 0.44%)</title><rect x="472.6" y="533" width="5.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="543.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (10,101,010 samples, 0.11%)</title><rect x="654.6" y="725" width="1.3" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="657.58" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="1188.7" y="357" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1191.70" y="367.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="325" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="335.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="476.5" y="101" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="479.54" y="111.5" ></text>
+</g>
+<g >
+<title>Disk::getIntersection (30,303,030 samples, 0.33%)</title><rect x="571.4" y="757" width="3.9" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="574.41" y="767.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,545,454,530 samples, 16.85%)</title><rect x="13.9" y="741" width="198.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="16.90" y="751.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="475.2" y="229" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="478.24" y="239.5" ></text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="775.4" y="645" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="778.44" y="655.5" ></text>
+</g>
+<g >
+<title>malloc (10,101,010 samples, 0.11%)</title><rect x="761.1" y="757" width="1.3" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="764.15" y="767.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="165" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="175.5" ></text>
+</g>
+<g >
+<title>[unknown] (40,404,040 samples, 0.44%)</title><rect x="1184.8" y="549" width="5.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1187.80" y="559.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="389" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="399.5" ></text>
+</g>
+<g >
+<title>calcColor (818,181,810 samples, 8.92%)</title><rect x="592.2" y="757" width="105.3" height="15.0" fill="rgb(209,19,4)" rx="2" ry="2" />
+<text  x="595.20" y="767.5" >calcColor</text>
+</g>
+<g >
+<title>[unknown] (505,050,500 samples, 5.51%)</title><rect x="147.8" y="661" width="64.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="150.75" y="671.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (1,545,454,530 samples, 16.85%)</title><rect x="13.9" y="725" width="198.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="16.90" y="735.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="778.0" y="677" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="781.04" y="687.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="405" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="415.5" ></text>
+</g>
+<g >
+<title>[unknown] (40,404,040 samples, 0.44%)</title><rect x="1184.8" y="565" width="5.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1187.80" y="575.5" ></text>
+</g>
+<g >
+<title>Vector::dot (10,101,010 samples, 0.11%)</title><rect x="623.4" y="709" width="1.3" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="626.39" y="719.5" ></text>
+</g>
+<g >
+<title>Plane::getIntersection (30,303,030 samples, 0.33%)</title><rect x="620.8" y="725" width="3.9" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="623.79" y="735.5" ></text>
+</g>
+<g >
+<title>git (2,060,606,040 samples, 22.47%)</title><rect x="212.7" y="821" width="265.1" height="15.0" fill="rgb(220,71,17)" rx="2" ry="2" />
+<text  x="215.73" y="831.5" >git</text>
+</g>
+<g >
+<title>Plane::getColor (10,101,010 samples, 0.11%)</title><rect x="652.0" y="725" width="1.3" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="654.98" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (696,969,690 samples, 7.60%)</title><rect x="388.2" y="629" width="89.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="391.17" y="639.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="475.2" y="245" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="478.24" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (30,303,030 samples, 0.33%)</title><rect x="549.3" y="725" width="3.9" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="552.32" y="735.5" ></text>
+</g>
+<g >
+<title>Plane::getIntersection (20,202,020 samples, 0.22%)</title><rect x="644.2" y="741" width="2.6" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="647.19" y="751.5" ></text>
+</g>
+<g >
+<title>Plane::getLightIntersection (10,101,010 samples, 0.11%)</title><rect x="691.0" y="725" width="1.3" height="15.0" fill="rgb(226,99,23)" rx="2" ry="2" />
+<text  x="693.97" y="735.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (10,101,010 samples, 0.11%)</title><rect x="744.3" y="741" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="747.25" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="778.0" y="757" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="781.04" y="767.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (10,101,010 samples, 0.11%)</title><rect x="632.5" y="725" width="1.3" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="635.49" y="735.5" ></text>
+</g>
+<g >
+<title>cat (1,575,757,560 samples, 17.18%)</title><rect x="10.0" y="821" width="202.7" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="13.00" y="831.5" >cat</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="453" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="463.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="373" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="383.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="517" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="527.5" ></text>
+</g>
+<g >
+<title>Vector::dot (10,101,010 samples, 0.11%)</title><rect x="624.7" y="725" width="1.3" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="627.69" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,222,222,200 samples, 24.23%)</title><rect x="904.1" y="709" width="285.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="907.10" y="719.5" >[unknown]</text>
+</g>
+<g >
+<title>[anon] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="501" width="1.3" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="475.64" y="511.5" ></text>
+</g>
+<g >
+<title>[unknown] (747,474,740 samples, 8.15%)</title><rect x="1093.8" y="613" width="96.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1096.83" y="623.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (323,232,320 samples, 3.52%)</title><rect x="858.6" y="645" width="41.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="861.61" y="655.5" >[un..</text>
+</g>
+<g >
+<title>Box::getIntersection (10,101,010 samples, 0.11%)</title><rect x="650.7" y="725" width="1.3" height="15.0" fill="rgb(217,59,14)" rx="2" ry="2" />
+<text  x="653.68" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (40,404,040 samples, 0.44%)</title><rect x="472.6" y="581" width="5.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="591.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,545,454,530 samples, 16.85%)</title><rect x="13.9" y="693" width="198.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="16.90" y="703.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="475.2" y="293" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="478.24" y="303.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="341" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="351.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="476.5" y="197" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="479.54" y="207.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (40,404,040 samples, 0.44%)</title><rect x="627.3" y="725" width="5.2" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="630.29" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="476.5" y="53" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="479.54" y="63.5" ></text>
+</g>
+<g >
+<title>__fmod_finite (10,101,010 samples, 0.11%)</title><rect x="655.9" y="725" width="1.3" height="15.0" fill="rgb(218,62,14)" rx="2" ry="2" />
+<text  x="658.88" y="735.5" ></text>
+</g>
+<g >
+<title>Ray::Ray (10,101,010 samples, 0.11%)</title><rect x="653.3" y="725" width="1.3" height="15.0" fill="rgb(238,153,36)" rx="2" ry="2" />
+<text  x="656.28" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,060,606,040 samples, 22.47%)</title><rect x="212.7" y="805" width="265.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="215.73" y="815.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (1,565,656,550 samples, 17.07%)</title><rect x="11.3" y="789" width="201.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="14.30" y="799.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="469" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="479.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (20,202,020 samples, 0.22%)</title><rect x="728.7" y="725" width="2.6" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="731.66" y="735.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (10,101,010 samples, 0.11%)</title><rect x="641.6" y="709" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="644.59" y="719.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,232,323,210 samples, 24.34%)</title><rect x="902.8" y="773" width="287.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="905.80" y="783.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="476.5" y="149" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="479.54" y="159.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,212,121,190 samples, 24.12%)</title><rect x="479.1" y="805" width="284.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="482.14" y="815.5" >[unknown]</text>
+</g>
+<g >
+<title>Ray::Ray (30,303,030 samples, 0.33%)</title><rect x="739.1" y="741" width="3.9" height="15.0" fill="rgb(238,153,36)" rx="2" ry="2" />
+<text  x="742.05" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,232,323,210 samples, 24.34%)</title><rect x="902.8" y="757" width="287.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="905.80" y="767.5" >[unknown]</text>
+</g>
+<g >
+<title>Vector::operator+ (30,303,030 samples, 0.33%)</title><rect x="588.3" y="757" width="3.9" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="591.30" y="767.5" ></text>
+</g>
+<g >
+<title>[unknown] (50,505,050 samples, 0.55%)</title><rect x="771.5" y="789" width="6.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="774.54" y="799.5" ></text>
+</g>
+<g >
+<title>Vector::mag2 (10,101,010 samples, 0.11%)</title><rect x="648.1" y="725" width="1.3" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="651.08" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="309" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="319.5" ></text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="897.6" y="565" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="900.60" y="575.5" ></text>
+</g>
+<g >
+<title>getLight (212,121,210 samples, 2.31%)</title><rect x="666.3" y="741" width="27.3" height="15.0" fill="rgb(240,163,39)" rx="2" ry="2" />
+<text  x="669.28" y="751.5" >g..</text>
+</g>
+<g >
+<title>solveScalers (20,202,020 samples, 0.22%)</title><rect x="659.8" y="693" width="2.6" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="662.78" y="703.5" ></text>
+</g>
+<g >
+<title>ps (60,606,060 samples, 0.66%)</title><rect x="771.5" y="821" width="7.8" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="774.54" y="831.5" ></text>
+</g>
+<g >
+<title>Vector::mag (10,101,010 samples, 0.11%)</title><rect x="692.3" y="725" width="1.3" height="15.0" fill="rgb(217,58,14)" rx="2" ry="2" />
+<text  x="695.27" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (50,505,050 samples, 0.55%)</title><rect x="771.5" y="693" width="6.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="774.54" y="703.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="776.7" y="613" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="779.74" y="623.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="197" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="207.5" ></text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="897.6" y="549" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="900.60" y="559.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,575,757,560 samples, 17.18%)</title><rect x="10.0" y="805" width="202.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="13.00" y="815.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="476.5" y="181" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="479.54" y="191.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,020,202,000 samples, 22.03%)</title><rect x="217.9" y="789" width="259.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="220.93" y="799.5" >[unknown]</text>
+</g>
+<g >
+<title>all (9,171,717,080 samples, 100%)</title><rect x="10.0" y="837" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="847.5" ></text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="1187.4" y="421" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1190.40" y="431.5" ></text>
+</g>
+<g >
+<title>[unknown] (939,393,930 samples, 10.24%)</title><rect x="779.3" y="741" width="120.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="782.34" y="751.5" >[unknown]</text>
+</g>
+<g >
+<title>[ld-linux-x86-64.so.2] (10,101,010 samples, 0.11%)</title><rect x="10.0" y="789" width="1.3" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="13.00" y="799.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,010,100,990 samples, 21.92%)</title><rect x="219.2" y="693" width="258.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="222.23" y="703.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="501" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="511.5" ></text>
+</g>
+<g >
+<title>[unknown] (30,303,030 samples, 0.33%)</title><rect x="473.9" y="453" width="3.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="476.94" y="463.5" ></text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="897.6" y="597" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="900.60" y="607.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="476.5" y="37" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="479.54" y="47.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="357" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="367.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="213" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="223.5" ></text>
+</g>
+<g >
+<title>[unknown] (939,393,930 samples, 10.24%)</title><rect x="779.3" y="725" width="120.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="782.34" y="735.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="293" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="303.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (10,101,010 samples, 0.11%)</title><rect x="568.8" y="725" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="571.81" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (50,505,050 samples, 0.55%)</title><rect x="771.5" y="741" width="6.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="774.54" y="751.5" ></text>
+</g>
+<g >
+<title>Sphere::getIntersection (10,101,010 samples, 0.11%)</title><rect x="584.4" y="757" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="587.41" y="767.5" ></text>
+</g>
+<g >
+<title>cfree (10,101,010 samples, 0.11%)</title><rect x="697.5" y="757" width="1.3" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="700.47" y="767.5" ></text>
+</g>
+<g >
+<title>Sphere::getIntersection (20,202,020 samples, 0.22%)</title><rect x="646.8" y="741" width="2.6" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="649.78" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (505,050,500 samples, 5.51%)</title><rect x="147.8" y="629" width="64.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="150.75" y="639.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (50,505,050 samples, 0.55%)</title><rect x="771.5" y="725" width="6.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="774.54" y="735.5" ></text>
+</g>
+<g >
+<title>solveScalers (20,202,020 samples, 0.22%)</title><rect x="575.3" y="741" width="2.6" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="578.31" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="778.0" y="773" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="781.04" y="783.5" ></text>
+</g>
+<g >
+<title>[unknown] (40,404,040 samples, 0.44%)</title><rect x="1184.8" y="469" width="5.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1187.80" y="479.5" ></text>
+</g>
+<g >
+<title>operator* (10,101,010 samples, 0.11%)</title><rect x="696.2" y="741" width="1.3" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="699.17" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (30,303,030 samples, 0.33%)</title><rect x="473.9" y="405" width="3.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="476.94" y="415.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="778.0" y="661" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="781.04" y="671.5" ></text>
+</g>
+<g >
+<title>Vector::mag2 (10,101,010 samples, 0.11%)</title><rect x="663.7" y="693" width="1.3" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="666.68" y="703.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="245" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="255.5" ></text>
+</g>
+<g >
+<title>insertionSort (30,303,030 samples, 0.33%)</title><rect x="757.2" y="757" width="3.9" height="15.0" fill="rgb(248,200,48)" rx="2" ry="2" />
+<text  x="760.25" y="767.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (10,101,010 samples, 0.11%)</title><rect x="731.3" y="725" width="1.3" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="734.26" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="229" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (10,101,010 samples, 0.11%)</title><rect x="540.2" y="741" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="543.22" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,020,202,000 samples, 22.03%)</title><rect x="217.9" y="725" width="259.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="220.93" y="735.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (2,020,202,000 samples, 22.03%)</title><rect x="217.9" y="741" width="259.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="220.93" y="751.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (1,535,353,520 samples, 16.74%)</title><rect x="15.2" y="677" width="197.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="18.20" y="687.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="475.2" y="389" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="478.24" y="399.5" ></text>
+</g>
+<g >
+<title>Vector::dot (10,101,010 samples, 0.11%)</title><rect x="571.4" y="725" width="1.3" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="574.41" y="735.5" ></text>
+</g>
+<g >
+<title>[ld-linux-x86-64.so.2] (10,101,010 samples, 0.11%)</title><rect x="10.0" y="757" width="1.3" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="13.00" y="767.5" ></text>
+</g>
+<g >
+<title>[unknown] (939,393,930 samples, 10.24%)</title><rect x="779.3" y="693" width="120.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="782.34" y="703.5" >[unknown]</text>
+</g>
+<g >
+<title>cfree (10,101,010 samples, 0.11%)</title><rect x="763.7" y="805" width="1.3" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="766.74" y="815.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="277" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="287.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="1188.7" y="373" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1191.70" y="383.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="485" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="495.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="778.0" y="709" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="781.04" y="719.5" ></text>
+</g>
+<g >
+<title>[anon] (10,101,010 samples, 0.11%)</title><rect x="473.9" y="389" width="1.3" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="476.94" y="399.5" ></text>
+</g>
+<g >
+<title>[unknown] (40,404,040 samples, 0.44%)</title><rect x="1184.8" y="517" width="5.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1187.80" y="527.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (20,202,020 samples, 0.22%)</title><rect x="585.7" y="757" width="2.6" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="588.70" y="767.5" ></text>
+</g>
+<g >
+<title>[unknown] (30,303,030 samples, 0.33%)</title><rect x="473.9" y="437" width="3.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="476.94" y="447.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="261" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="271.5" ></text>
+</g>
+<g >
+<title>[unknown] (707,070,700 samples, 7.71%)</title><rect x="386.9" y="661" width="90.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="389.87" y="671.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (323,232,320 samples, 3.52%)</title><rect x="858.6" y="613" width="41.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="861.61" y="623.5" >[un..</text>
+</g>
+<g >
+<title>[unknown] (747,474,740 samples, 8.15%)</title><rect x="1093.8" y="645" width="96.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1096.83" y="655.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (939,393,930 samples, 10.24%)</title><rect x="779.3" y="789" width="120.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="782.34" y="799.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="1188.7" y="341" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1191.70" y="351.5" ></text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="475.2" y="325" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="478.24" y="335.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (10,101,010 samples, 0.11%)</title><rect x="642.9" y="725" width="1.3" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="645.89" y="735.5" ></text>
+</g>
+<g >
+<title>malloc (50,505,050 samples, 0.55%)</title><rect x="765.0" y="805" width="6.5" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="768.04" y="815.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (10,101,010 samples, 0.11%)</title><rect x="626.0" y="725" width="1.3" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="628.99" y="735.5" ></text>
+</g>
+<g >
+<title>getLight (454,545,450 samples, 4.96%)</title><rect x="698.8" y="757" width="58.4" height="15.0" fill="rgb(240,163,39)" rx="2" ry="2" />
+<text  x="701.77" y="767.5" >getLight</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="389" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="399.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (10,101,010 samples, 0.11%)</title><rect x="755.9" y="741" width="1.3" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="758.95" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="476.5" y="117" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="479.54" y="127.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (20,202,020 samples, 0.22%)</title><rect x="718.3" y="725" width="2.6" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="721.26" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="473.9" y="357" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="476.94" y="367.5" ></text>
+</g>
+<g >
+<title>Sphere::getLightIntersection (20,202,020 samples, 0.22%)</title><rect x="662.4" y="709" width="2.6" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="665.38" y="719.5" ></text>
+</g>
+<g >
+<title>Vector::dot (20,202,020 samples, 0.22%)</title><rect x="680.6" y="709" width="2.6" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="683.57" y="719.5" ></text>
+</g>
+<g >
+<title>[unknown] (40,404,040 samples, 0.44%)</title><rect x="1184.8" y="581" width="5.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1187.80" y="591.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="325" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="335.5" ></text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="475.2" y="261" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="478.24" y="271.5" ></text>
+</g>
+<g >
+<title>[unknown] (939,393,930 samples, 10.24%)</title><rect x="779.3" y="757" width="120.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="782.34" y="767.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="437" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="447.5" ></text>
+</g>
+<g >
+<title>[unknown] (696,969,690 samples, 7.60%)</title><rect x="388.2" y="613" width="89.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="391.17" y="623.5" >[unknown]</text>
+</g>
+<g >
+<title>Vector::Vector (10,101,010 samples, 0.11%)</title><rect x="632.5" y="709" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="635.49" y="719.5" ></text>
+</g>
+<g >
+<title>[unknown] (323,232,320 samples, 3.52%)</title><rect x="858.6" y="661" width="41.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="861.61" y="671.5" >[un..</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="476.5" y="69" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="479.54" y="79.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (30,303,030 samples, 0.33%)</title><rect x="745.6" y="741" width="3.8" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="748.55" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="421" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="431.5" ></text>
+</g>
+<g >
+<title>Box::getIntersection (222,222,220 samples, 2.42%)</title><rect x="614.3" y="741" width="28.6" height="15.0" fill="rgb(217,59,14)" rx="2" ry="2" />
+<text  x="617.30" y="751.5" >Bo..</text>
+</g>
+<g >
+<title>[unknown] (2,222,222,200 samples, 24.23%)</title><rect x="904.1" y="741" width="285.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="907.10" y="751.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (2,222,222,200 samples, 24.23%)</title><rect x="904.1" y="725" width="285.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="907.10" y="735.5" >[unknown]</text>
+</g>
+<g >
+<title>getLight (60,606,060 samples, 0.66%)</title><rect x="657.2" y="725" width="7.8" height="15.0" fill="rgb(240,163,39)" rx="2" ry="2" />
+<text  x="660.18" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="476.5" y="85" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="479.54" y="95.5" ></text>
+</g>
+<g >
+<title>[unknown] (60,606,060 samples, 0.66%)</title><rect x="771.5" y="805" width="7.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="774.54" y="815.5" ></text>
+</g>
+<g >
+<title>Box::getLightIntersection (252,525,250 samples, 2.75%)</title><rect x="706.6" y="741" width="32.5" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="709.56" y="751.5" >Bo..</text>
+</g>
+<g >
+<title>solveScalers (70,707,070 samples, 0.77%)</title><rect x="633.8" y="725" width="9.1" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="636.79" y="735.5" ></text>
+</g>
+<g >
+<title>Box::getLightIntersection (131,313,130 samples, 1.43%)</title><rect x="674.1" y="725" width="16.9" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="677.07" y="735.5" ></text>
+</g>
+<g >
+<title>Plane::getColor (10,101,010 samples, 0.11%)</title><rect x="642.9" y="741" width="1.3" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="645.89" y="751.5" ></text>
+</g>
+<g >
+<title>main.exe (2,282,828,260 samples, 24.89%)</title><rect x="477.8" y="821" width="293.7" height="15.0" fill="rgb(216,53,12)" rx="2" ry="2" />
+<text  x="480.84" y="831.5" >main.exe</text>
+</g>
+<g >
+<title>Plane::getIntersection (10,101,010 samples, 0.11%)</title><rect x="571.4" y="741" width="1.3" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="574.41" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="405" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="415.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (30,303,030 samples, 0.33%)</title><rect x="745.6" y="725" width="3.8" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="748.55" y="735.5" ></text>
+</g>
+<g >
+<title>Box::getLightIntersection (40,404,040 samples, 0.44%)</title><rect x="657.2" y="709" width="5.2" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="660.18" y="719.5" ></text>
+</g>
+<g >
+<title>Sphere::getLightIntersection (10,101,010 samples, 0.11%)</title><rect x="743.0" y="741" width="1.3" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="745.95" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (505,050,500 samples, 5.51%)</title><rect x="147.8" y="645" width="64.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="150.75" y="655.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="476.5" y="133" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="479.54" y="143.5" ></text>
+</g>
+<g >
+<title>[unknown] (40,404,040 samples, 0.44%)</title><rect x="472.6" y="549" width="5.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="559.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="181" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="191.5" ></text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="775.4" y="661" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="778.44" y="671.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,020,202,000 samples, 22.03%)</title><rect x="217.9" y="757" width="259.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="220.93" y="767.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="475.2" y="357" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="478.24" y="367.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="341" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="351.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="476.5" y="213" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="479.54" y="223.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,222,222,200 samples, 24.23%)</title><rect x="904.1" y="677" width="285.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="907.10" y="687.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (40,404,040 samples, 0.44%)</title><rect x="1184.8" y="533" width="5.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1187.80" y="543.5" ></text>
+</g>
+<g >
+<title>[unknown] (40,404,040 samples, 0.44%)</title><rect x="1184.8" y="485" width="5.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1187.80" y="495.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="373" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="383.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="453" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="463.5" ></text>
+</g>
+<g >
+<title>insertionSort (20,202,020 samples, 0.22%)</title><rect x="693.6" y="741" width="2.6" height="15.0" fill="rgb(248,200,48)" rx="2" ry="2" />
+<text  x="696.57" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (30,303,030 samples, 0.33%)</title><rect x="473.9" y="501" width="3.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="476.94" y="511.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,555,555,540 samples, 16.96%)</title><rect x="12.6" y="773" width="200.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="15.60" y="783.5" >[unknown]</text>
+</g>
+<g >
+<title>Vector::dot (60,606,060 samples, 0.66%)</title><rect x="720.9" y="725" width="7.8" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="723.86" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (50,505,050 samples, 0.55%)</title><rect x="471.3" y="597" width="6.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="474.34" y="607.5" ></text>
+</g>
+<g >
+<title>refresh (2,171,717,150 samples, 23.68%)</title><rect x="484.3" y="789" width="279.4" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="487.34" y="799.5" >refresh</text>
+</g>
+<g >
+<title>Vector::operator- (10,101,010 samples, 0.11%)</title><rect x="572.7" y="741" width="1.3" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="575.71" y="751.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (10,101,010 samples, 0.11%)</title><rect x="679.3" y="709" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="682.27" y="719.5" ></text>
+</g>
+<g >
+<title>solveScalers (50,505,050 samples, 0.55%)</title><rect x="732.6" y="725" width="6.5" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="735.56" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (50,505,050 samples, 0.55%)</title><rect x="771.5" y="757" width="6.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="774.54" y="767.5" ></text>
+</g>
+<g >
+<title>solveScalers (50,505,050 samples, 0.55%)</title><rect x="684.5" y="709" width="6.5" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="687.47" y="719.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (10,101,010 samples, 0.11%)</title><rect x="754.6" y="725" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="757.65" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,252,525,230 samples, 24.56%)</title><rect x="900.2" y="789" width="289.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="903.20" y="799.5" >[unknown]</text>
+</g>
+<g >
+<title>Vector::operator+ (10,101,010 samples, 0.11%)</title><rect x="553.2" y="741" width="1.3" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="556.22" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (747,474,740 samples, 8.15%)</title><rect x="1093.8" y="629" width="96.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1096.83" y="639.5" >[unknown]</text>
+</g>
+<g >
+<title>sleep (939,393,930 samples, 10.24%)</title><rect x="779.3" y="821" width="120.9" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="782.34" y="831.5" >sleep</text>
+</g>
+<g >
+<title>insertionSort (10,101,010 samples, 0.11%)</title><rect x="665.0" y="725" width="1.3" height="15.0" fill="rgb(248,200,48)" rx="2" ry="2" />
+<text  x="667.98" y="735.5" ></text>
+</g>
+<g >
+<title>[libc.so.6] (10,101,010 samples, 0.11%)</title><rect x="477.8" y="805" width="1.3" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="480.84" y="815.5" ></text>
+</g>
+<g >
+<title>[unknown] (40,404,040 samples, 0.44%)</title><rect x="472.6" y="565" width="5.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="575.5" ></text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="475.2" y="309" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="478.24" y="319.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,222,222,200 samples, 24.23%)</title><rect x="904.1" y="693" width="285.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="907.10" y="703.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="469" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="479.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,545,454,530 samples, 16.85%)</title><rect x="13.9" y="709" width="198.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="16.90" y="719.5" >[unknown]</text>
+</g>
+<g >
+<title>Vector::Vector (10,101,010 samples, 0.11%)</title><rect x="626.0" y="709" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="628.99" y="719.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,010,100,990 samples, 21.92%)</title><rect x="219.2" y="709" width="258.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="222.23" y="719.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="309" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="319.5" ></text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="1187.4" y="405" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1190.40" y="415.5" ></text>
+</g>
+<g >
+<title>[unknown] (50,505,050 samples, 0.55%)</title><rect x="771.5" y="773" width="6.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="774.54" y="783.5" ></text>
+</g>
+<g >
+<title>[unknown] (30,303,030 samples, 0.33%)</title><rect x="473.9" y="469" width="3.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="476.94" y="479.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,252,525,230 samples, 24.56%)</title><rect x="900.2" y="805" width="289.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="903.20" y="815.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="778.0" y="725" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="781.04" y="735.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (10,101,010 samples, 0.11%)</title><rect x="737.8" y="709" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="740.75" y="719.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="778.0" y="741" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="781.04" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="775.4" y="629" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="778.44" y="639.5" ></text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="897.6" y="581" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="900.60" y="591.5" ></text>
+</g>
+<g >
+<title>Plane::getIntersection (141,414,140 samples, 1.54%)</title><rect x="522.0" y="741" width="18.2" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="525.03" y="751.5" ></text>
+</g>
+<g >
+<title>cfree (10,101,010 samples, 0.11%)</title><rect x="762.4" y="773" width="1.3" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="765.44" y="783.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="357" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="367.5" ></text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="475.2" y="341" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="478.24" y="351.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="293" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="303.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="213" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="223.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,020,202,000 samples, 22.03%)</title><rect x="217.9" y="773" width="259.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="220.93" y="783.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="1187.4" y="437" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1190.40" y="447.5" ></text>
+</g>
+<g >
+<title>[unknown] (767,676,760 samples, 8.37%)</title><rect x="1091.2" y="661" width="98.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1094.23" y="671.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (707,070,700 samples, 7.71%)</title><rect x="386.9" y="645" width="90.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="389.87" y="655.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="475.2" y="373" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="478.24" y="383.5" ></text>
+</g>
+<g >
+<title>Plane::getIntersection (50,505,050 samples, 0.55%)</title><rect x="577.9" y="757" width="6.5" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="580.91" y="767.5" ></text>
+</g>
+<g >
+<title>[unknown] (40,404,040 samples, 0.44%)</title><rect x="472.6" y="517" width="5.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="527.5" ></text>
+</g>
+<g >
+<title>[unknown] (50,505,050 samples, 0.55%)</title><rect x="771.5" y="709" width="6.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="774.54" y="719.5" ></text>
+</g>
+<g >
+<title>std::numeric_limits&lt;double&gt;::infinity (10,101,010 samples, 0.11%)</title><rect x="570.1" y="741" width="1.3" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="573.11" y="751.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (10,101,010 samples, 0.11%)</title><rect x="642.9" y="709" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="645.89" y="719.5" ></text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="1187.4" y="389" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1190.40" y="399.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,545,454,530 samples, 16.85%)</title><rect x="13.9" y="757" width="198.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="16.90" y="767.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="197" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="207.5" ></text>
+</g>
+<g >
+<title>[ld-linux-x86-64.so.2] (10,101,010 samples, 0.11%)</title><rect x="10.0" y="773" width="1.3" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="13.00" y="783.5" ></text>
+</g>
+<g >
+<title>[unknown] (50,505,050 samples, 0.55%)</title><rect x="771.5" y="677" width="6.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="774.54" y="687.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="245" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="255.5" ></text>
+</g>
+<g >
+<title>[unknown] (323,232,320 samples, 3.52%)</title><rect x="858.6" y="629" width="41.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="861.61" y="639.5" >[un..</text>
+</g>
+<g >
+<title>Box::getIntersection (464,646,460 samples, 5.07%)</title><rect x="511.6" y="757" width="59.8" height="15.0" fill="rgb(217,59,14)" rx="2" ry="2" />
+<text  x="514.63" y="767.5" >Box::g..</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="778.0" y="693" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="781.04" y="703.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (90,909,090 samples, 0.99%)</title><rect x="541.5" y="741" width="11.7" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="544.52" y="751.5" ></text>
+</g>
+<g >
+<title>Vector::dot (80,808,080 samples, 0.88%)</title><rect x="529.8" y="725" width="10.4" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="532.82" y="735.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (50,505,050 samples, 0.55%)</title><rect x="749.4" y="741" width="6.5" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="752.45" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (939,393,930 samples, 10.24%)</title><rect x="779.3" y="709" width="120.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="782.34" y="719.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (939,393,930 samples, 10.24%)</title><rect x="779.3" y="677" width="120.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="782.34" y="687.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="472.6" y="261" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.64" y="271.5" ></text>
+</g>
+<g >
+<title>solveScalers (111,111,110 samples, 1.21%)</title><rect x="555.8" y="741" width="14.3" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="558.81" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="533" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="543.5" ></text>
+</g>
+<g >
+<title>calcColor (2,141,414,120 samples, 23.35%)</title><rect x="486.9" y="773" width="275.5" height="15.0" fill="rgb(209,19,4)" rx="2" ry="2" />
+<text  x="489.94" y="783.5" >calcColor</text>
+</g>
+<g >
+<title>[unknown] (20,202,020 samples, 0.22%)</title><rect x="1187.4" y="453" width="2.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1190.40" y="463.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="485" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="495.5" ></text>
+</g>
+<g >
+<title>Plane::getColor (20,202,020 samples, 0.22%)</title><rect x="575.3" y="757" width="2.6" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="578.31" y="767.5" ></text>
+</g>
+<g >
+<title>[unknown] (30,303,030 samples, 0.33%)</title><rect x="473.9" y="421" width="3.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="476.94" y="431.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="277" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="287.5" ></text>
+</g>
+<g >
+<title>calcColor (131,313,130 samples, 1.43%)</title><rect x="649.4" y="741" width="16.9" height="15.0" fill="rgb(209,19,4)" rx="2" ry="2" />
+<text  x="652.38" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="473.9" y="373" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="476.94" y="383.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (10,101,010 samples, 0.11%)</title><rect x="554.5" y="741" width="1.3" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="557.52" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (505,050,500 samples, 5.51%)</title><rect x="147.8" y="613" width="64.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="150.75" y="623.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (939,393,930 samples, 10.24%)</title><rect x="779.3" y="773" width="120.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="782.34" y="783.5" >[unknown]</text>
+</g>
+<g >
+<title>Vector::Vector (10,101,010 samples, 0.11%)</title><rect x="650.7" y="709" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="653.68" y="719.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="476.5" y="165" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="479.54" y="175.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (10,101,010 samples, 0.11%)</title><rect x="631.2" y="709" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="634.19" y="719.5" ></text>
+</g>
+<g >
+<title>[libc.so.6] (40,404,040 samples, 0.44%)</title><rect x="479.1" y="789" width="5.2" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="482.14" y="799.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (10,101,010 samples, 0.11%)</title><rect x="683.2" y="709" width="1.3" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="686.17" y="719.5" ></text>
+</g>
+<g >
+<title>open64 (10,101,010 samples, 0.11%)</title><rect x="778.0" y="789" width="1.3" height="15.0" fill="rgb(225,92,22)" rx="2" ry="2" />
+<text  x="781.04" y="799.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,101,010 samples, 0.11%)</title><rect x="898.9" y="229" width="1.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="901.90" y="239.5" ></text>
+</g>
+</g>
+</svg>
