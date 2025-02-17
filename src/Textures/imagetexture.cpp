@@ -1,5 +1,5 @@
 #include "imagetexture.h"
-
+#include <omp.h>
 inline void ImageTexture::getColor(unsigned char* toFill, double* am, double *op, double *ref, double x, double y){
    int xi = (int)(x*w), yi = (int)(y*h);
    int p1 = 4*(xi+w*yi);
@@ -12,7 +12,8 @@ inline void ImageTexture::getColor(unsigned char* toFill, double* am, double *op
 }
 
 void ImageTexture::maskImageAlpha() {
-   #pragma omp parallel for schedule(dynamic, 16)
+   int num_threads = omp_get_max_threads();
+   #pragma omp parallel for schedule(dynamic, num_threads)
    for(int y = h-1; y >= 0; y--) {
        for(int x = 0; x < w; x++) {
            int total = 4*(x + y*w);
