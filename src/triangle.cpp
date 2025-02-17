@@ -1,41 +1,42 @@
 #include "triangle.h"
 
-Triangle::Triangle(Vector c, Vector b, Vector a, Texture* t):Plane(Vector(0,0,0), t, 0., 0., 0., 0., 0.){
-   center = c;
-   Vector righta = (b-c);
-   textureX = righta.mag();
-   right = righta/textureX;
-   vect = right.cross(b-a).normalize();
+Triangle::Triangle(Vector c, Vector b, Vector a, Texture* t) 
+    : Plane(c, t, 0, 0, 0, 0, 0), a(a), b(b), c(c) {
+    center = c;
+    Vector righta = (b-c);
+    textureX = righta.mag();
+    right = righta/textureX;
+    vect = right.cross(b-a).normalize();
 
-   xsin = -right.z;
-   if(xsin<-1.)xsin = -1;
-   else if (xsin>1.)xsin=1.; 
-   yaw = asin(xsin);
-   xcos = sqrt(1.-xsin*xsin);
+    xsin = -right.z;
+    if(xsin<-1.)xsin = -1;
+    else if (xsin>1.)xsin=1.; 
+    yaw = asin(xsin);
+    xcos = sqrt(1.-xsin*xsin);
 
-   zcos = right.x/xcos;
-   zsin = -right.y/xcos;
-   if(zsin<-1.)zsin = -1;
-   else if (zsin>1.)zsin=1.;
-   if(zcos<-1.)zcos = -1;
-   else if (zcos>1.)zcos=1.;
-   roll = asin(zsin);
+    zcos = right.x/xcos;
+    zsin = -right.y/xcos;
+    if(zsin<-1.)zsin = -1;
+    else if (zsin>1.)zsin=1.;
+    if(zcos<-1.)zcos = -1;
+    else if (zcos>1.)zcos=1.;
+    roll = asin(zsin);
 
-   ycos = vect.z/xcos;
-   if(ycos<-1.)ycos = -1;
-   else if (ycos>1.)ycos=1.;
-   pitch = acos(ycos);
-   ysin = sqrt(1-ycos*ycos);
+    ycos = vect.z/xcos;
+    if(ycos<-1.)ycos = -1;
+    else if (ycos>1.)ycos=1.;
+    pitch = acos(ycos);
+    ysin = sqrt(1-ycos*ycos);
 
-   up.x = -xsin*ysin*zcos+ycos*zsin;
-   up.y = ycos*zcos+xsin*ysin*zsin;
-   up.z = -xcos*ysin;
-   Vector temp = vect.cross(right);
-   Vector np = solveScalers(right, up, vect, a-c);
-   textureY = np.y;
-   thirdX = np.x;
+    up.x = -xsin*ysin*zcos+ycos*zsin;
+    up.y = ycos*zcos+xsin*ysin*zsin;
+    up.z = -xcos*ysin;
+    Vector temp = vect.cross(right);
+    Vector np = solveScalers(right, up, vect, a-c);
+    textureY = np.y;
+    thirdX = np.x;
    
-   d = -vect.dot(center);
+    d = -vect.dot(center);
 }
 
 double Triangle::getIntersection(Ray ray){

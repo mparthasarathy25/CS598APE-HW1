@@ -20,6 +20,7 @@ class Shape{
    virtual void setYaw(double d) = 0;
    virtual void setPitch(double d) = 0;
    virtual void setRoll(double d) = 0;
+   virtual AABB calcBoundingBox() const = 0;
 };
 
 void calcColor(unsigned char* toFill, Autonoma*, Ray ray, unsigned int depth);

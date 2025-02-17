@@ -3,7 +3,7 @@
 
 #include "shape.h"
 
-class Plane : public Shape{
+class Plane : public Shape {
 public:
   Vector vect, right, up;
   double d;
@@ -18,6 +18,11 @@ public:
   void setYaw(double d);
   void setPitch(double d);
   void setRoll(double d);
+  AABB calcBoundingBox() const override {
+    const double large_volume = 1000000;
+    Vector extension(large_volume, large_volume, large_volume);
+    return AABB(-extension + center, extension + center);
+  }
 };
 
 #endif

@@ -16,5 +16,9 @@ public:
   void setYaw(double a);
   void setPitch(double b);
   void setRoll(double c);
+  AABB calcBoundingBox() const override {
+    Vector extension(radius, radius, radius);
+    return AABB(-extension + center, extension + center);
+  }
 };
 #endif
