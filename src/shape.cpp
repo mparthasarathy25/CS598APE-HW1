@@ -41,142 +41,142 @@ typedef struct {
 
 // This is the third/final iteration of changes we made where we manually added a variable called listSize to the Autonoma constructor so that it does not need to be counted everytime, but can be retrieved from the constructor directly
 // This reduced runtime to 1.77 seconds and reduced CPU occupation to about 4.04%
-// void calcColor(unsigned char* toFill,Autonoma* c, Ray ray, unsigned int depth){
-//    ShapeNode* t = c->listStart;
-//    size_t seen = 0;
-//    TimeAndShape min;
-//    //removed malloc for times and performed single pass to retrieve minimum TimeAndShape from c list
-//    //time went from 1.68 to 1.58
-//    while (t != NULL) {
-//       double time = t->data->getIntersection(ray);
-//       if (seen == 0) {
-//          min = (TimeAndShape){ time, t->data };
-//       } else {
-//          TimeAndShape tmp = (TimeAndShape){ time, t->data };
-//          if (tmp.time < min.time) {
-//             min = tmp;
-//          }
-//       }
-//       seen++;
-//       t = t->next;
-//    }
+void calcColor(unsigned char* toFill,Autonoma* c, Ray ray, unsigned int depth){
+   ShapeNode* t = c->listStart;
+   size_t seen = 0;
+   TimeAndShape min;
+   //removed malloc for times and performed single pass to retrieve minimum TimeAndShape from c list
+   //time went from 1.68 to 1.58
+   while (t != NULL) {
+      double time = t->data->getIntersection(ray);
+      if (seen == 0) {
+         min = (TimeAndShape){ time, t->data };
+      } else {
+         TimeAndShape tmp = (TimeAndShape){ time, t->data };
+         if (tmp.time < min.time) {
+            min = tmp;
+         }
+      }
+      seen++;
+      t = t->next;
+   }
 
-//    if (seen == 0 || min.time == inf) {
-//       double opacity, reflection, ambient;
-//       Vector temp = ray.vector.normalize();
-//       const double x = temp.x;
-//       const double z = temp.z;
-//       const double me = (temp.y<0)?-temp.y:temp.y;
-//       const double angle = atan2(z, x);
-//       c->skybox->getColor(toFill, &ambient, &opacity, &reflection, fix(angle/M_TWO_PI),fix(me));
-//       return;
-//    }
+   if (seen == 0 || min.time == inf) {
+      double opacity, reflection, ambient;
+      Vector temp = ray.vector.normalize();
+      const double x = temp.x;
+      const double z = temp.z;
+      const double me = (temp.y<0)?-temp.y:temp.y;
+      const double angle = atan2(z, x);
+      c->skybox->getColor(toFill, &ambient, &opacity, &reflection, fix(angle/M_TWO_PI),fix(me));
+      return;
+   }
 
-//    double curTime = min.time;
-//    Shape* curShape = min.shape;
+   double curTime = min.time;
+   Shape* curShape = min.shape;
 
-//    Vector intersect = curTime*ray.vector+ray.point;
-//    double opacity, reflection, ambient;
-//    curShape->getColor(toFill, &ambient, &opacity, &reflection, c, Ray(intersect, ray.vector), depth);
+   Vector intersect = curTime*ray.vector+ray.point;
+   double opacity, reflection, ambient;
+   curShape->getColor(toFill, &ambient, &opacity, &reflection, c, Ray(intersect, ray.vector), depth);
    
-//    double lightData[3];
-//    getLight(lightData, c, intersect, curShape->getNormal(intersect), curShape->reversible());
-//    toFill[0] = (unsigned char)(toFill[0]*(ambient+lightData[0]*(1-ambient)));
-//    toFill[1] = (unsigned char)(toFill[1]*(ambient+lightData[1]*(1-ambient)));
-//    toFill[2] = (unsigned char)(toFill[2]*(ambient+lightData[2]*(1-ambient)));
-//    if(depth<c->depth && (opacity<1-1e-6 || reflection>1e-6)){
-//       unsigned char col[4];
-//       if(opacity<1-1e-6){
-//          Ray nextRay = Ray(intersect+ray.vector*1E-4, ray.vector);
-//          calcColor(col, c, nextRay, depth+1);
-//          toFill[0]= (unsigned char)(toFill[0]*opacity+col[0]*(1-opacity));
-//          toFill[1]= (unsigned char)(toFill[1]*opacity+col[1]*(1-opacity));
-//          toFill[2]= (unsigned char)(toFill[2]*opacity+col[2]*(1-opacity));        
-//       }
-//       if(reflection>1e-6){
-//          Vector norm = curShape->getNormal(intersect).normalize();
-//          Vector vec = ray.vector-2*norm*(norm.dot(ray.vector));
-//          Ray nextRay = Ray(intersect+vec*1E-4, vec);
-//          calcColor(col, c, nextRay, depth+1);
+   double lightData[3];
+   getLight(lightData, c, intersect, curShape->getNormal(intersect), curShape->reversible());
+   toFill[0] = (unsigned char)(toFill[0]*(ambient+lightData[0]*(1-ambient)));
+   toFill[1] = (unsigned char)(toFill[1]*(ambient+lightData[1]*(1-ambient)));
+   toFill[2] = (unsigned char)(toFill[2]*(ambient+lightData[2]*(1-ambient)));
+   if(depth<c->depth && (opacity<1-1e-6 || reflection>1e-6)){
+      unsigned char col[4];
+      if(opacity<1-1e-6){
+         Ray nextRay = Ray(intersect+ray.vector*1E-4, ray.vector);
+         calcColor(col, c, nextRay, depth+1);
+         toFill[0]= (unsigned char)(toFill[0]*opacity+col[0]*(1-opacity));
+         toFill[1]= (unsigned char)(toFill[1]*opacity+col[1]*(1-opacity));
+         toFill[2]= (unsigned char)(toFill[2]*opacity+col[2]*(1-opacity));        
+      }
+      if(reflection>1e-6){
+         Vector norm = curShape->getNormal(intersect).normalize();
+         Vector vec = ray.vector-2*norm*(norm.dot(ray.vector));
+         Ray nextRay = Ray(intersect+vec*1E-4, vec);
+         calcColor(col, c, nextRay, depth+1);
       
-//          toFill[0]= (unsigned char)(toFill[0]*(1-reflection)+col[0]*(reflection));
-//          toFill[1]= (unsigned char)(toFill[1]*(1-reflection)+col[1]*(reflection));
-//          toFill[2]= (unsigned char)(toFill[2]*(1-reflection)+col[2]*(reflection));
-//       }
-//    }
-// }
+         toFill[0]= (unsigned char)(toFill[0]*(1-reflection)+col[0]*(reflection));
+         toFill[1]= (unsigned char)(toFill[1]*(1-reflection)+col[1]*(reflection));
+         toFill[2]= (unsigned char)(toFill[2]*(1-reflection)+col[2]*(reflection));
+      }
+   }
+}
 
 // This is the fourth iteration of changes where we used a stack to traverse the BVH and find the closest intersection
 // This led to a speedup to about 0.41 seconds, but issue is that we haven't implemented all of the bounding box calculations for all of the shapes
-void calcColor(unsigned char* toFill, Autonoma* c, Ray ray, unsigned int depth) {
-    TimeAndShape min = {inf, nullptr};
+// void calcColor(unsigned char* toFill, Autonoma* c, Ray ray, unsigned int depth) {
+//     TimeAndShape min = {inf, nullptr};
     
-    if (c->bvhRoot) {
-        std::vector<BVHNode*> stack;
-        stack.push_back(c->bvhRoot);
+//     if (c->bvhRoot) {
+//         std::vector<BVHNode*> stack;
+//         stack.push_back(c->bvhRoot);
         
-        while (!stack.empty()) {
-            BVHNode* node = stack.back();
-            stack.pop_back();
+//         while (!stack.empty()) {
+//             BVHNode* node = stack.back();
+//             stack.pop_back();
             
-            if (!node->bounds.intersect(ray)) continue;
+//             if (!node->bounds.intersect(ray)) continue;
             
-            if (node->shape) {
-                double time = node->shape->getIntersection(ray);
-                if (time < min.time && time > 0) {
-                    min = {time, node->shape};
-                }
-            } else {
-                if (node->left) stack.push_back(node->left);
-                if (node->right) stack.push_back(node->right);
-            }
-        }
-    }
+//             if (node->shape) {
+//                 double time = node->shape->getIntersection(ray);
+//                 if (time < min.time && time > 0) {
+//                     min = {time, node->shape};
+//                 }
+//             } else {
+//                 if (node->left) stack.push_back(node->left);
+//                 if (node->right) stack.push_back(node->right);
+//             }
+//         }
+//     }
     
-    if (min.time == inf || !min.shape) {
-        double opacity, reflection, ambient;
-        Vector temp = ray.vector.normalize();
-        const double x = temp.x;
-        const double z = temp.z;
-        const double me = (temp.y<0)?-temp.y:temp.y;
-        const double angle = atan2(z, x);
-        c->skybox->getColor(toFill, &ambient, &opacity, &reflection, fix(angle/M_TWO_PI),fix(me));
-        return;
-    }
+//     if (min.time == inf || !min.shape) {
+//         double opacity, reflection, ambient;
+//         Vector temp = ray.vector.normalize();
+//         const double x = temp.x;
+//         const double z = temp.z;
+//         const double me = (temp.y<0)?-temp.y:temp.y;
+//         const double angle = atan2(z, x);
+//         c->skybox->getColor(toFill, &ambient, &opacity, &reflection, fix(angle/M_TWO_PI),fix(me));
+//         return;
+//     }
     
-    double curTime = min.time;
-    Shape* curShape = min.shape;
+//     double curTime = min.time;
+//     Shape* curShape = min.shape;
 
-    Vector intersect = curTime*ray.vector+ray.point;
-    double opacity, reflection, ambient;
-    curShape->getColor(toFill, &ambient, &opacity, &reflection, c, Ray(intersect, ray.vector), depth);
+//     Vector intersect = curTime*ray.vector+ray.point;
+//     double opacity, reflection, ambient;
+//     curShape->getColor(toFill, &ambient, &opacity, &reflection, c, Ray(intersect, ray.vector), depth);
    
-    double lightData[3];
-    getLight(lightData, c, intersect, curShape->getNormal(intersect), curShape->reversible());
-    toFill[0] = (unsigned char)(toFill[0]*(ambient+lightData[0]*(1-ambient)));
-    toFill[1] = (unsigned char)(toFill[1]*(ambient+lightData[1]*(1-ambient)));
-    toFill[2] = (unsigned char)(toFill[2]*(ambient+lightData[2]*(1-ambient)));
-    if(depth<c->depth && (opacity<1-1e-6 || reflection>1e-6)){
-        unsigned char col[4];
-        if(opacity<1-1e-6){
-            Ray nextRay = Ray(intersect+ray.vector*1E-4, ray.vector);
-            calcColor(col, c, nextRay, depth+1);
-            toFill[0]= (unsigned char)(toFill[0]*opacity+col[0]*(1-opacity));
-            toFill[1]= (unsigned char)(toFill[1]*opacity+col[1]*(1-opacity));
-            toFill[2]= (unsigned char)(toFill[2]*opacity+col[2]*(1-opacity));        
-        }
-        if(reflection>1e-6){
-            Vector norm = curShape->getNormal(intersect).normalize();
-            Vector vec = ray.vector-2*norm*(norm.dot(ray.vector));
-            Ray nextRay = Ray(intersect+vec*1E-4, vec);
-            calcColor(col, c, nextRay, depth+1);
+//     double lightData[3];
+//     getLight(lightData, c, intersect, curShape->getNormal(intersect), curShape->reversible());
+//     toFill[0] = (unsigned char)(toFill[0]*(ambient+lightData[0]*(1-ambient)));
+//     toFill[1] = (unsigned char)(toFill[1]*(ambient+lightData[1]*(1-ambient)));
+//     toFill[2] = (unsigned char)(toFill[2]*(ambient+lightData[2]*(1-ambient)));
+//     if(depth<c->depth && (opacity<1-1e-6 || reflection>1e-6)){
+//         unsigned char col[4];
+//         if(opacity<1-1e-6){
+//             Ray nextRay = Ray(intersect+ray.vector*1E-4, ray.vector);
+//             calcColor(col, c, nextRay, depth+1);
+//             toFill[0]= (unsigned char)(toFill[0]*opacity+col[0]*(1-opacity));
+//             toFill[1]= (unsigned char)(toFill[1]*opacity+col[1]*(1-opacity));
+//             toFill[2]= (unsigned char)(toFill[2]*opacity+col[2]*(1-opacity));        
+//         }
+//         if(reflection>1e-6){
+//             Vector norm = curShape->getNormal(intersect).normalize();
+//             Vector vec = ray.vector-2*norm*(norm.dot(ray.vector));
+//             Ray nextRay = Ray(intersect+vec*1E-4, vec);
+//             calcColor(col, c, nextRay, depth+1);
           
-            toFill[0]= (unsigned char)(toFill[0]*(1-reflection)+col[0]*(reflection));
-            toFill[1]= (unsigned char)(toFill[1]*(1-reflection)+col[1]*(reflection));
-            toFill[2]= (unsigned char)(toFill[2]*(1-reflection)+col[2]*(reflection));
-        }
-    }
-}
+//             toFill[0]= (unsigned char)(toFill[0]*(1-reflection)+col[0]*(reflection));
+//             toFill[1]= (unsigned char)(toFill[1]*(1-reflection)+col[1]*(reflection));
+//             toFill[2]= (unsigned char)(toFill[2]*(1-reflection)+col[2]*(reflection));
+//         }
+//     }
+// }
 
 // This is the second iteration of changes we did to the code where we changed the capacity of the array so that when we allocated and reallocated the memory, it could hold more
 // This increased speedup to about 1.78 seconds and reduced the CPU occupation to about 4.5%
