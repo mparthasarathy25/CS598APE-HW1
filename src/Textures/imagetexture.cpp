@@ -1,6 +1,6 @@
 #include "imagetexture.h"
 
-void ImageTexture::getColor(unsigned char* toFill, double* am, double *op, double *ref, double x, double y){
+inline void ImageTexture::getColor(unsigned char* toFill, double* am, double *op, double *ref, double x, double y){
    int xi = (int)(x*w), yi = (int)(y*h);
    int p1 = 4*(xi+w*yi);
    toFill[0] = imageData[p1];
@@ -127,7 +127,7 @@ int x,y;
 }
 
 
-void ImageTexture::getColor(unsigned char* toFill, double* am, double *op, double *ref,unsigned int x, unsigned int y){
+inline void ImageTexture::getColor(unsigned char* toFill, double* am, double *op, double *ref,unsigned int x, unsigned int y){
    int start = 4*(x+w*y);
    toFill[0] = imageData[start];
    toFill[1] = imageData[start+1];

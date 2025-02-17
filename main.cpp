@@ -9,7 +9,7 @@
 #include "src/triangle.h"
 #include "src/Textures/imagetexture.h"
 #include "src/Textures/colortexture.h"
-#include<stdio.h>
+#include <stdio.h>
 #include<stdlib.h>
 #include <string.h>
 #include <iostream>
@@ -40,7 +40,7 @@ unsigned char get(int i, int j, int k){
 unsigned char* getPos(int i, int j){
    return &DATA[3*(i+j*W)]; 
 }
-void set(int i, int j, unsigned char r, unsigned char g, unsigned char b){
+inline void set(int i, int j, unsigned char r, unsigned char g, unsigned char b){
    DATA[3*(i+j*W)] = r; 
    DATA[3*(i+j*W)+1] = g; 
    DATA[3*(i+j*W)+2] = b; 
@@ -55,17 +55,17 @@ void refresh(Autonoma* c){
    }
 }
 
-void outputPPM(FILE* f){
+inline void outputPPM(FILE* f){
    fprintf(f, "P6 %d %d 255 ", W, H);
    fwrite(DATA, 1, W*H * 3, f);
 }
 
-void outputPPM(char* file){
+inline void outputPPM(char* file){
    FILE* f = fopen(file, "w");
    outputPPM(f);
    fclose(f);
 }
-void output(char* file){
+inline void output(char* file){
    char command[2000];
    FILE* f;
    snprintf(command, sizeof(command), "magick ppm:- %s", file);
