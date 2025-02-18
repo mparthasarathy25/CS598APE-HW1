@@ -14,11 +14,30 @@ To clean existing build artifacts run:
 make clean
 ```
 
+To run the perf commands within the docker container (on the host folder):
+```bash
+perf record -g ./main.exe -i inputs/pianoroom.ray --ppm -o output/pianoroom.ppm -H 500 -W 500
+perf record -g ./main.exe -i inputs/globe.ray --ppm  -a inputs/globe.animate --movie -F 24
+perf record -g ./main.exe -i inputs/elephant.ray --ppm  -a inputs/elephant.animate --movie -F 24 -W 100 -H 100 -o output/sphere.mp4 
+```
+**For the elephant animation, in the elephant.ray file, comment out line 23 and uncomment line 24**
+
+**If you would like to look at the percentages of CPU Usage after running the perf record commands, run perf report**
+
+**If you would like to open the svg files, download the files and drag them into a browser (for example, chrome)**
+
+**Please follow the instructions at the bottom of the README to build and run the docker container**
+
 This program assumes the following are installed on your machine:
 * A working C++ compiler (g++ is assumed in the Makefile)
 * make
 * ImageMagick (for importing and exporting non-ppm images)
 * FFMpeg (for exporting movies from image sequences)
+* perf
+
+**There are two commits to focus on in terms of our contributions:**
+* Final Commit (No BVH) - https://github.com/mparthasarathy25/CS598APE-HW1/tree/main
+* BVH Exploration - https://github.com/mparthasarathy25/CS598APE-HW1/tree/eadc70b42a238fc2757648ee70556347f7c05af9
 
 The raytracer program here is general and can be used to generate any number of different potential scenes.
 
@@ -137,5 +156,6 @@ An Autonoma is a base class used to hold all of the shapes in scope, the camera,
 For ease of use and installation, we provide a docker image capable of running and building code here. The source docker file is in /docker (which is essentially a list of commands to build an OS state from scratch). It contains the dependent compilers, and some other nice things.
 
 You can build this yourself manually by running `cd docker && docker build -t <myusername>/598ape`. Alternatively we have pushed a pre-built version to `wsmoses/598ape` on Dockerhub.
+Additionally, in case you are building your own docker image to run, make sure to update the tag in dockerrun.sh as well to reflect your username change
 
-You can then use the Docker container to build and run your code. If you run `./dockerrun.sh` you will enter an interactive bash session with all the packages from docker installed (that script by default uses `wsmoses/598ape`, feel free to replace it with whatever location you like if you built from scratch). The current directory (aka this folder) is mounted within `/host`. Any files you create on your personal machine will be available there, and anything you make in the container in that folder will be available on your personal machine.
+You can then use the Docker container to build and run your code. If you run `sudo ./dockerrun.sh` you will enter an interactive bash session with all the packages from docker installed (that script by default uses `wsmoses/598ape`, feel free to replace it with whatever location you like if you built from scratch). The current directory (aka this folder) is mounted within `/host`. Any files you create on your personal machine will be available there, and anything you make in the container in that folder will be available on your personal machine.
