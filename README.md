@@ -14,7 +14,7 @@ To clean existing build artifacts run:
 make clean
 ```
 
-To run the perf commands within the docker container (on the host folder):
+To run the perf commands within the docker container for determining the execution time (on the host folder):
 ```bash
 perf record -g ./main.exe -i inputs/pianoroom.ray --ppm -o output/pianoroom.ppm -H 500 -W 500
 perf record -g ./main.exe -i inputs/globe.ray --ppm  -a inputs/globe.animate --movie -F 24
